@@ -1,0 +1,116 @@
+<Window x:Class="BimScriptControlPanel.NodeEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Node Builder"
+        Height="720"
+        Width="1060"
+        MinHeight="560"
+        MinWidth="820"
+        Background="#F6F8FB">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Visual Chain Builder"
+                   FontSize="24"
+                   FontWeight="SemiBold"
+                   Foreground="#0F172A"
+                   Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="1"
+                   Text="Drag nodes to arrange. Right-click one node, then right-click another to create a link."
+                   FontSize="13"
+                   Foreground="#475569"
+                   Margin="0,0,0,10"/>
+
+        <Border Grid.Row="2"
+                BorderThickness="1"
+                BorderBrush="#D8E0EC"
+                CornerRadius="10"
+                Background="White"
+                Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Name="AutoLayoutButton"
+                            Content="Auto Layout"
+                            Click="AutoLayoutButton_Click"
+                            Padding="12,7"
+                            Margin="0,0,8,0"
+                            BorderBrush="#CBD5E1"
+                            BorderThickness="1"
+                            Background="#EEF2F7"
+                            Foreground="#0F172A"/>
+                    <Button Name="ClearLinksButton"
+                            Content="Clear Links"
+                            Click="ClearLinksButton_Click"
+                            Padding="12,7"
+                            Margin="0,0,8,0"
+                            BorderBrush="#CBD5E1"
+                            BorderThickness="1"
+                            Background="#EEF2F7"
+                            Foreground="#0F172A"/>
+                    <Button Name="RemoveSourceLinkButton"
+                            Content="Unlink Selected Source"
+                            Click="RemoveSourceLinkButton_Click"
+                            Padding="12,7"
+                            BorderBrush="#CBD5E1"
+                            BorderThickness="1"
+                            Background="#EEF2F7"
+                            Foreground="#0F172A"/>
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        BorderThickness="1"
+                        BorderBrush="#E2E8F0"
+                        CornerRadius="8"
+                        Background="#FBFDFF"
+                        ClipToBounds="True">
+                    <Grid>
+                        <Canvas Name="EdgeCanvas"
+                                IsHitTestVisible="False"/>
+                        <Canvas Name="NodeCanvas"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Name="InfoText"
+                       VerticalAlignment="Center"
+                       Foreground="#334155"
+                       Text="Right-click a source node to start linking."/>
+
+            <Button Grid.Column="1"
+                    Content="Cancel"
+                    Click="CancelButton_Click"
+                    Padding="14,8"
+                    BorderBrush="#CBD5E1"
+                    BorderThickness="1"
+                    Background="#EEF2F7"
+                    Foreground="#0F172A"/>
+
+            <Button Grid.Column="3"
+                    Content="Apply to Chain"
+                    Click="ApplyButton_Click"
+                    Padding="14,8"
+                    BorderThickness="0"
+                    Background="#2563EB"
+                    Foreground="White"/>
+        </Grid>
+    </Grid>
+</Window>
