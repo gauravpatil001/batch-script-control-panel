@@ -1,4 +1,4 @@
-# BIM Script Control Panel (WPF)
+# Batch Script Control Panel (WPF)
 
 ## Prerequisites
 
@@ -39,6 +39,6 @@ dotnet run
 - Script execution runs through `cmd.exe /c` with output captured in the app.
 - In Node Builder: drag nodes to arrange, right-click source then right-click target to toggle a link, then `Apply to Chain`.
 - A node can feed multiple nodes, and multiple nodes can feed one node (acyclic graph required).
-- Use `Save Preset` to store current workflow edges + run settings, then pick preset and `Load`.
+- Use `Save Preset` to store current workflow edges + run settings.
 - Selecting a preset in the dropdown now auto-loads it (with validation checks).
 
