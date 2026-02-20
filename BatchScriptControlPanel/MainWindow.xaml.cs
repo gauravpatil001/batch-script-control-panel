@@ -11,7 +11,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using Microsoft.Win32;
 
-namespace BimScriptControlPanel;
+namespace BatchScriptControlPanel;
 
 public partial class MainWindow : Window
 {
@@ -55,7 +55,7 @@ public partial class MainWindow : Window
     private static string BuildCatalogPath()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var appFolder = Path.Combine(localAppData, "BimScriptControlPanel");
+        var appFolder = Path.Combine(localAppData, "BatchScriptControlPanel");
         Directory.CreateDirectory(appFolder);
         return Path.Combine(appFolder, "scripts_catalog.json");
     }
@@ -1545,3 +1545,4 @@ public enum NodeRuntimeState
     Failed,
     Skipped,
 }
+

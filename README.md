@@ -8,7 +8,7 @@
 ## Run
 
 ```powershell
-cd BimScriptControlPanel
+cd BatchScriptControlPanel
 dotnet run
 ```
 
@@ -31,7 +31,7 @@ dotnet run
 
 ## Catalog storage
 
-- Saved to `%LocalAppData%\\BimScriptControlPanel\\scripts_catalog.json`
+- Saved to `%LocalAppData%\\BatchScriptControlPanel\\scripts_catalog.json`
 
 ## Notes
 
@@ -41,3 +41,4 @@ dotnet run
 - A node can feed multiple nodes, and multiple nodes can feed one node (acyclic graph required).
 - Use `Save Preset` to store current workflow edges + run settings, then pick preset and `Load`.
 - Selecting a preset in the dropdown now auto-loads it (with validation checks).
+
