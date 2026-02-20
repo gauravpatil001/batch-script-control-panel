@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
 
     private bool _isExecuting;
     private bool _stopRequested;
+    private bool _isApplyingPresetSelection;
 
     private string _sortProperty = "Name";
     private ListSortDirection _sortDirection = ListSortDirection.Ascending;
@@ -95,9 +97,27 @@ public partial class MainWindow : Window
             return;
         }
 
+        var impactedWorkflowEdges = _workflowEdges.Count(x =>
+            string.Equals(x.FromPath, selected.Path, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.ToPath, selected.Path, StringComparison.OrdinalIgnoreCase)
+        );
+
+        var impactedPresets = _workflowPresets
+            .Where(p => p.WorkflowEdges.Any(e =>
+                string.Equals(e.FromPath, selected.Path, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(e.ToPath, selected.Path, StringComparison.OrdinalIgnoreCase)))
+            .Select(p => p.Name)
+            .ToList();
+
+        if (!ConfirmScriptRemovalImpact(selected, impactedWorkflowEdges, impactedPresets))
+        {
+            return;
+        }
+
         var index = ScriptListView.SelectedIndex;
         _scripts.Remove(selected);
         RemoveWorkflowEdgesByPath(selected.Path);
+        AutoCleanPresetsForRemovedPath(selected.Path);
         RebuildWorkflowPreview();
 
         if (_scripts.Count > 0)
@@ -130,6 +150,7 @@ public partial class MainWindow : Window
         selected.DateModified = GetDateModified(normalized);
 
         UpdateWorkflowEdgesForPath(oldPath, normalized);
+        UpdatePresetEdgesForPath(oldPath, normalized);
         NormalizeWorkflowEdges();
 
         ScriptListView.Items.Refresh();
@@ -199,6 +220,18 @@ public partial class MainWindow : Window
         if (!IsAcyclic(graph))
         {
             MessageBox.Show("Workflow contains a cycle. Fix links in Node Builder.", "Invalid workflow", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        var currentValidation = ValidateWorkflowEdges(_workflowEdges);
+        if (!currentValidation.IsValid)
+        {
+            MessageBox.Show(
+                BuildValidationMessage("Current workflow has issues", currentValidation),
+                "Workflow validation",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
             return;
         }
 
@@ -435,25 +468,6 @@ public partial class MainWindow : Window
         UpdateUiState();
     }
 
-    private void LoadPresetButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isExecuting || WorkflowPresetComboBox.SelectedItem is not WorkflowPreset preset)
-        {
-            return;
-        }
-
-        _workflowEdges.Clear();
-        _workflowEdges.AddRange(CloneEdges(preset.WorkflowEdges));
-        NormalizeWorkflowEdges();
-
-        StopOnFirstFailureCheckBox.IsChecked = preset.StopOnFirstFailure;
-        SetMaxParallelSelection(preset.MaxParallel <= 0 ? 2 : preset.MaxParallel);
-
-        RebuildWorkflowPreview();
-        SaveCatalog();
-        UpdateUiState();
-    }
-
     private void DeletePresetButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isExecuting || WorkflowPresetComboBox.SelectedItem is not WorkflowPreset preset)
@@ -549,10 +563,51 @@ public partial class MainWindow : Window
 
     private void WorkflowPresetComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (IsLoaded)
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        UpdatePresetValidationBadge();
+
+        if (_isApplyingPresetSelection || _isExecuting || WorkflowPresetComboBox.SelectedItem is not WorkflowPreset preset)
         {
             UpdateUiState();
+            return;
         }
+
+        var validation = ValidateWorkflowEdges(preset.WorkflowEdges);
+        if (!validation.IsValid)
+        {
+            MessageBox.Show(
+                BuildValidationMessage($"Preset '{preset.Name}' has issues", validation),
+                "Preset validation",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning
+            );
+            UpdateUiState();
+            return;
+        }
+
+        _isApplyingPresetSelection = true;
+        try
+        {
+            _workflowEdges.Clear();
+            _workflowEdges.AddRange(CloneEdges(preset.WorkflowEdges));
+            NormalizeWorkflowEdges();
+
+            StopOnFirstFailureCheckBox.IsChecked = preset.StopOnFirstFailure;
+            SetMaxParallelSelection(preset.MaxParallel <= 0 ? 2 : preset.MaxParallel);
+
+            RebuildWorkflowPreview();
+            SaveCatalog();
+        }
+        finally
+        {
+            _isApplyingPresetSelection = false;
+        }
+
+        UpdateUiState();
     }
 
     private async Task<int> RunProcessAsync(string scriptPath, string scriptName, string linePrefix)
@@ -670,13 +725,14 @@ public partial class MainWindow : Window
         ClearWorkflowButton.IsEnabled = !_isExecuting && _workflowEdges.Count > 0;
         SavePresetButton.IsEnabled = !_isExecuting && _workflowEdges.Count > 0;
         WorkflowPresetComboBox.IsEnabled = !_isExecuting && _workflowPresets.Count > 0;
-        LoadPresetButton.IsEnabled = !_isExecuting && WorkflowPresetComboBox.SelectedItem is WorkflowPreset;
         DeletePresetButton.IsEnabled = !_isExecuting && WorkflowPresetComboBox.SelectedItem is WorkflowPreset;
         MaxParallelComboBox.IsEnabled = !_isExecuting;
         StopOnFirstFailureCheckBox.IsEnabled = !_isExecuting;
 
         ScriptListView.IsEnabled = !_isExecuting;
         StopButton.IsEnabled = _isExecuting;
+
+        UpdatePresetValidationBadge();
     }
 
     private void SetExecutionState(bool executing, string status)
@@ -741,6 +797,7 @@ public partial class MainWindow : Window
             StopOnFirstFailureCheckBox.IsChecked = stopOnFirstFailure;
             SetMaxParallelSelection(maxParallel);
             RebuildWorkflowPreview();
+            UpdatePresetValidationBadge();
         }
         catch
         {
@@ -752,6 +809,7 @@ public partial class MainWindow : Window
             StopOnFirstFailureCheckBox.IsChecked = true;
             SetMaxParallelSelection(2);
             SaveCatalog();
+            UpdatePresetValidationBadge();
         }
     }
 
@@ -880,6 +938,20 @@ public partial class MainWindow : Window
         _workflowEdges.AddRange(normalized);
     }
 
+    private static void NormalizePresetEdges(WorkflowPreset preset)
+    {
+        preset.WorkflowEdges = (preset.WorkflowEdges ?? new List<WorkflowEdge>())
+            .Where(x => !string.IsNullOrWhiteSpace(x.FromPath) && !string.IsNullOrWhiteSpace(x.ToPath))
+            .Select(x => new WorkflowEdge
+            {
+                FromPath = Path.GetFullPath(x.FromPath),
+                ToPath = Path.GetFullPath(x.ToPath),
+            })
+            .Where(x => !string.Equals(x.FromPath, x.ToPath, StringComparison.OrdinalIgnoreCase))
+            .DistinctBy(x => $"{x.FromPath}=>{x.ToPath}", StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     private void LoadWorkflowPresets(IEnumerable<WorkflowPreset> presets)
     {
         _workflowPresets.Clear();
@@ -914,6 +986,50 @@ public partial class MainWindow : Window
                 StopOnFirstFailure = preset.StopOnFirstFailure,
                 MaxParallel = preset.MaxParallel <= 0 ? 2 : preset.MaxParallel,
             });
+        }
+    }
+
+    private void AutoCleanPresetsForRemovedPath(string removedPath)
+    {
+        var presetsToRemove = new List<WorkflowPreset>();
+        foreach (var preset in _workflowPresets)
+        {
+            preset.WorkflowEdges = preset.WorkflowEdges
+                .Where(e =>
+                    !string.Equals(e.FromPath, removedPath, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(e.ToPath, removedPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            NormalizePresetEdges(preset);
+            if (preset.WorkflowEdges.Count == 0)
+            {
+                presetsToRemove.Add(preset);
+            }
+        }
+
+        foreach (var preset in presetsToRemove)
+        {
+            _workflowPresets.Remove(preset);
+        }
+    }
+
+    private void UpdatePresetEdgesForPath(string oldPath, string newPath)
+    {
+        foreach (var preset in _workflowPresets)
+        {
+            foreach (var edge in preset.WorkflowEdges)
+            {
+                if (string.Equals(edge.FromPath, oldPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    edge.FromPath = newPath;
+                }
+                if (string.Equals(edge.ToPath, oldPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    edge.ToPath = newPath;
+                }
+            }
+
+            NormalizePresetEdges(preset);
         }
     }
 
@@ -1099,6 +1215,182 @@ public partial class MainWindow : Window
         MaxParallelComboBox.SelectedIndex = 1;
     }
 
+    private bool ConfirmScriptRemovalImpact(ScriptEntry selected, int impactedWorkflowEdges, List<string> impactedPresets)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Remove script '{selected.Name}'?");
+        sb.AppendLine();
+        sb.AppendLine($"Current workflow edges affected: {impactedWorkflowEdges}");
+        sb.AppendLine($"Presets affected: {impactedPresets.Count}");
+
+        if (impactedPresets.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Affected presets:");
+            foreach (var preset in impactedPresets.Take(6))
+            {
+                sb.AppendLine($"- {preset}");
+            }
+            if (impactedPresets.Count > 6)
+            {
+                sb.AppendLine($"... and {impactedPresets.Count - 6} more");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("This will also auto-clean all affected presets.");
+
+        return MessageBox.Show(
+            sb.ToString(),
+            "Confirm script removal",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning
+        ) == MessageBoxResult.Yes;
+    }
+
+    private WorkflowValidationResult ValidateWorkflowEdges(IEnumerable<WorkflowEdge> edges)
+    {
+        var edgeList = edges.ToList();
+        if (edgeList.Count == 0)
+        {
+            return WorkflowValidationResult.Valid();
+        }
+
+        var scriptPathSet = _scripts
+            .Select(s => s.Path)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var missingFromCatalog = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var missingOnDisk = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var edge in edgeList)
+        {
+            if (!scriptPathSet.Contains(edge.FromPath))
+            {
+                missingFromCatalog.Add(edge.FromPath);
+            }
+            if (!scriptPathSet.Contains(edge.ToPath))
+            {
+                missingFromCatalog.Add(edge.ToPath);
+            }
+
+            if (!File.Exists(edge.FromPath))
+            {
+                missingOnDisk.Add(edge.FromPath);
+            }
+            if (!File.Exists(edge.ToPath))
+            {
+                missingOnDisk.Add(edge.ToPath);
+            }
+        }
+
+        var tempGraph = BuildGraphFromEdgeList(edgeList);
+        bool hasCycle = !IsAcyclic(tempGraph);
+
+        return new WorkflowValidationResult(
+            missingFromCatalog.ToList(),
+            missingOnDisk.ToList(),
+            hasCycle
+        );
+    }
+
+    private WorkflowGraph BuildGraphFromEdgeList(IEnumerable<WorkflowEdge> edges)
+    {
+        var nodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var edge in edges)
+        {
+            nodes.Add(edge.FromPath);
+            nodes.Add(edge.ToPath);
+        }
+
+        var incoming = nodes.ToDictionary(n => n, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
+        var outgoing = nodes.ToDictionary(n => n, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var edge in edges)
+        {
+            outgoing[edge.FromPath].Add(edge.ToPath);
+            incoming[edge.ToPath].Add(edge.FromPath);
+        }
+
+        return new WorkflowGraph(nodes, incoming, outgoing);
+    }
+
+    private void UpdatePresetValidationBadge()
+    {
+        if (WorkflowPresetComboBox.SelectedItem is not WorkflowPreset preset)
+        {
+            PresetValidationText.Text = string.Empty;
+            return;
+        }
+
+        var validation = ValidateWorkflowEdges(preset.WorkflowEdges);
+        if (validation.IsValid)
+        {
+            PresetValidationText.Text = "Preset OK";
+            PresetValidationText.Foreground = System.Windows.Media.Brushes.ForestGreen;
+            return;
+        }
+
+        var parts = new List<string>();
+        if (validation.MissingFromCatalog.Count > 0)
+        {
+            parts.Add($"{validation.MissingFromCatalog.Count} not in script list");
+        }
+        if (validation.MissingOnDisk.Count > 0)
+        {
+            parts.Add($"{validation.MissingOnDisk.Count} missing files");
+        }
+        if (validation.HasCycle)
+        {
+            parts.Add("cycle");
+        }
+
+        PresetValidationText.Text = "Preset issues: " + string.Join(", ", parts);
+        PresetValidationText.Foreground = System.Windows.Media.Brushes.IndianRed;
+    }
+
+    private static string BuildValidationMessage(string title, WorkflowValidationResult validation)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(title + ".");
+        sb.AppendLine();
+
+        if (validation.MissingFromCatalog.Count > 0)
+        {
+            sb.AppendLine("Paths missing from current Scripts list:");
+            foreach (var p in validation.MissingFromCatalog.Take(6))
+            {
+                sb.AppendLine($"- {p}");
+            }
+            if (validation.MissingFromCatalog.Count > 6)
+            {
+                sb.AppendLine($"... and {validation.MissingFromCatalog.Count - 6} more");
+            }
+            sb.AppendLine();
+        }
+
+        if (validation.MissingOnDisk.Count > 0)
+        {
+            sb.AppendLine("Paths missing on disk:");
+            foreach (var p in validation.MissingOnDisk.Take(6))
+            {
+                sb.AppendLine($"- {p}");
+            }
+            if (validation.MissingOnDisk.Count > 6)
+            {
+                sb.AppendLine($"... and {validation.MissingOnDisk.Count - 6} more");
+            }
+            sb.AppendLine();
+        }
+
+        if (validation.HasCycle)
+        {
+            sb.AppendLine("Workflow graph has a cycle.");
+        }
+
+        return sb.ToString().Trim();
+    }
+
     private static List<WorkflowEdge> CloneEdges(IEnumerable<WorkflowEdge> edges)
     {
         return edges
@@ -1209,6 +1501,26 @@ public sealed class WorkflowPreset
     public List<WorkflowEdge> WorkflowEdges { get; set; } = new();
     public bool StopOnFirstFailure { get; set; } = true;
     public int MaxParallel { get; set; } = 2;
+}
+
+public sealed class WorkflowValidationResult
+{
+    public List<string> MissingFromCatalog { get; }
+    public List<string> MissingOnDisk { get; }
+    public bool HasCycle { get; }
+    public bool IsValid => MissingFromCatalog.Count == 0 && MissingOnDisk.Count == 0 && !HasCycle;
+
+    public WorkflowValidationResult(List<string> missingFromCatalog, List<string> missingOnDisk, bool hasCycle)
+    {
+        MissingFromCatalog = missingFromCatalog;
+        MissingOnDisk = missingOnDisk;
+        HasCycle = hasCycle;
+    }
+
+    public static WorkflowValidationResult Valid()
+    {
+        return new WorkflowValidationResult(new List<string>(), new List<string>(), false);
+    }
 }
 
 public sealed class WorkflowGraph
