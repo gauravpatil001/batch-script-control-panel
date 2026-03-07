@@ -92,20 +92,22 @@ public partial class MainWindow : Window
 
     private void RemoveScriptButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isExecuting || ScriptListView.SelectedItem is not ScriptEntry selected)
+        if (_isExecuting || ScriptListView.SelectedItems.Count == 0)
         {
             return;
         }
 
+        var selected = ScriptListView.SelectedItems.Cast<ScriptEntry>().ToList();
+
         var impactedWorkflowEdges = _workflowEdges.Count(x =>
-            string.Equals(x.FromPath, selected.Path, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(x.ToPath, selected.Path, StringComparison.OrdinalIgnoreCase)
+            selected.Any(s => string.Equals(x.FromPath, s.Path, StringComparison.OrdinalIgnoreCase) ||
+                              string.Equals(x.ToPath, s.Path, StringComparison.OrdinalIgnoreCase))
         );
 
         var impactedPresets = _workflowPresets
             .Where(p => p.WorkflowEdges.Any(e =>
-                string.Equals(e.FromPath, selected.Path, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(e.ToPath, selected.Path, StringComparison.OrdinalIgnoreCase)))
+                selected.Any(s => string.Equals(e.FromPath, s.Path, StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(e.ToPath, s.Path, StringComparison.OrdinalIgnoreCase))))
             .Select(p => p.Name)
             .ToList();
 
@@ -115,9 +117,12 @@ public partial class MainWindow : Window
         }
 
         var index = ScriptListView.SelectedIndex;
-        _scripts.Remove(selected);
-        RemoveWorkflowEdgesByPath(selected.Path);
-        AutoCleanPresetsForRemovedPath(selected.Path);
+        foreach (var s in selected)
+        {
+            _scripts.Remove(s);
+            RemoveWorkflowEdgesByPath(s.Path);
+            AutoCleanPresetsForRemovedPath(s.Path);
+        }
         RebuildWorkflowPreview();
 
         if (_scripts.Count > 0)
@@ -700,10 +705,18 @@ public partial class MainWindow : Window
 
     private void UpdateSelectionDetails()
     {
-        if (ScriptListView.SelectedItem is ScriptEntry selected)
+        var count = ScriptListView.SelectedItems.Count;
+        if (count == 1 && ScriptListView.SelectedItem is ScriptEntry selected)
         {
             SelectedScriptText.Text = $"Selected: {selected.Name}";
             SelectedPathTextBox.Text = selected.Path;
+            return;
+        }
+
+        if (count > 1)
+        {
+            SelectedScriptText.Text = $"Selected: {count} scripts";
+            SelectedPathTextBox.Text = string.Empty;
             return;
         }
 
@@ -713,12 +726,13 @@ public partial class MainWindow : Window
 
     private void UpdateUiState()
     {
-        var hasSelection = ScriptListView.SelectedItem is ScriptEntry;
+        var hasSelection = ScriptListView.SelectedItems.Count > 0;
+        var hasSingleSelection = ScriptListView.SelectedItems.Count == 1;
 
         AddScriptButton.IsEnabled = !_isExecuting;
         RemoveScriptButton.IsEnabled = !_isExecuting && hasSelection;
-        ChangePathButton.IsEnabled = !_isExecuting && hasSelection;
-        RunButton.IsEnabled = !_isExecuting && hasSelection;
+        ChangePathButton.IsEnabled = !_isExecuting && hasSingleSelection;
+        RunButton.IsEnabled = !_isExecuting && hasSingleSelection;
 
         NodeBuilderButton.IsEnabled = !_isExecuting && _scripts.Count > 0;
         RunWorkflowButton.IsEnabled = !_isExecuting && _workflowEdges.Count > 0;
@@ -1215,10 +1229,13 @@ public partial class MainWindow : Window
         MaxParallelComboBox.SelectedIndex = 1;
     }
 
-    private bool ConfirmScriptRemovalImpact(ScriptEntry selected, int impactedWorkflowEdges, List<string> impactedPresets)
+    private bool ConfirmScriptRemovalImpact(List<ScriptEntry> selected, int impactedWorkflowEdges, List<string> impactedPresets)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Remove script '{selected.Name}'?");
+        if (selected.Count == 1)
+            sb.AppendLine($"Remove script '{selected[0].Name}'?");
+        else
+            sb.AppendLine($"Remove {selected.Count} scripts?");
         sb.AppendLine();
         sb.AppendLine($"Current workflow edges affected: {impactedWorkflowEdges}");
         sb.AppendLine($"Presets affected: {impactedPresets.Count}");

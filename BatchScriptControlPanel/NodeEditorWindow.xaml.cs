@@ -115,12 +115,17 @@ public partial class NodeEditorWindow : Window
             Child = stack,
             Cursor = Cursors.SizeAll,
             Tag = script.Path,
+            ToolTip = script.Path,
         };
 
         border.MouseLeftButtonDown += Node_MouseLeftButtonDown;
         border.MouseMove += Node_MouseMove;
         border.MouseLeftButtonUp += Node_MouseLeftButtonUp;
         border.MouseRightButtonUp += Node_MouseRightButtonUp;
+        border.MouseEnter += (_, _) => InfoText.Text = script.Path;
+        border.MouseLeave += (_, _) => InfoText.Text = _selectedSourcePath is null
+            ? "Right-click a source node to start linking."
+            : "Source selected. Right-click a target node to toggle link.";
 
         return border;
     }
@@ -362,6 +367,17 @@ public partial class NodeEditorWindow : Window
             bool isSelected = _selectedSourcePath is not null && string.Equals(pair.Key, _selectedSourcePath, StringComparison.OrdinalIgnoreCase);
             pair.Value.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isSelected ? "#2563EB" : "#CBD5E1"));
             pair.Value.BorderThickness = isSelected ? new Thickness(2) : new Thickness(1);
+        }
+
+        if (_selectedSourcePath is not null)
+        {
+            var selected = _scripts.FirstOrDefault(s => string.Equals(s.Path, _selectedSourcePath, StringComparison.OrdinalIgnoreCase));
+            SelectedNodePathText.Text = selected is not null ? $"{selected.Name}  —  {selected.Path}" : _selectedSourcePath;
+            SelectedNodeBar.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            SelectedNodeBar.Visibility = Visibility.Collapsed;
         }
     }
 

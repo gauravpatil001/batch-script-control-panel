@@ -90,7 +90,7 @@
                     <ListView Name="ScriptListView"
                               Grid.Row="2"
                               SelectionChanged="ScriptListView_SelectionChanged"
-                              SelectionMode="Single"
+                              SelectionMode="Extended"
                               BorderBrush="#E2E8F0"
                               BorderThickness="1"
                               Background="#FBFDFF"
